@@ -1,0 +1,90 @@
+# ============================================
+# .gitignore para repositório de Claude Skills
+# ============================================
+
+# ----- Credenciais & Segredos -----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.secret
+secrets/
+credentials/
+
+# ----- Configurações locais do Claude -----
+# Ignora settings pessoais, mas mantém as skills
+#.claude/settings.json
+#.claude/settings.local.json
+#.claude/todos/
+
+# Mantém explicitamente as skills (redundante, mas declarativo)
+#!.claude/commands/
+#!.claude/agents/
+
+# ----- Node.js -----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+*.dist-info/
+
+# ----- IDEs & Editores -----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ----- Logs & Temporários -----
+*.log
+logs/
+tmp/
+temp/
+.tmp/
+
+# ----- OS -----
+.DS_Store
+.AppleDouble
+.LSOverride
+Desktop.ini
+$RECYCLE.BIN/
+.idea
+backups
+cache
+debug
+downloads
+file-history
+ide
+paste-cache
+plans
+plugins
+projects
+session-env
+sessions
+shell-snapshots
+tasks
+telemetry
+todos
+history.jsonl
+*.json
