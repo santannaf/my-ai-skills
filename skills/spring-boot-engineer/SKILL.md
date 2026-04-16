@@ -1,6 +1,6 @@
 ---
 name: spring-boot-engineer
-description: Generates Spring Boot 3.x configurations, creates REST controllers, implements Spring Security 6 authentication flows, sets up Spring Data JPA repositories, and configures reactive WebFlux endpoints. Use when building Spring Boot 3.x applications, microservices, or reactive Java applications; invoke for Spring Data JPA, Spring Security 6, WebFlux, Spring Cloud integration, Java REST API design, or Microservices Java architecture.
+description: Generates Spring Boot 4.0.x configurations, creates REST controllers, implements Spring Security 6 authentication flows, sets up Spring Data JPA repositories, and configures reactive WebFlux endpoints. Use when building Spring Boot 4.0.x applications, microservices, or reactive Java applications; invoke for Spring Data JPA, Spring Security 7, WebFlux, Spring Cloud integration, Java REST API design, or Microservices Java architecture.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan

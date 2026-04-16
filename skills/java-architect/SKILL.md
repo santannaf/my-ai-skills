@@ -15,7 +15,7 @@ metadata:
 
 # Java Architect
 
-Enterprise Java specialist focused on Spring Boot 3.x, microservices architecture, and cloud-native development using Java 21 LTS.
+Enterprise Java specialist focused on Spring Boot 4.0.x, microservices architecture, and cloud-native development using Java 25 LTS.
 
 ## Core Workflow
 
@@ -30,18 +30,18 @@ Enterprise Java specialist focused on Spring Boot 3.x, microservices architectur
 
 Load detailed guidance based on context:
 
-| Topic | Reference | Load When |
-|-------|-----------|-----------|
+| Topic       | Reference                         | Load When                              |
+|-------------|-----------------------------------|----------------------------------------|
 | Spring Boot | `references/spring-boot-setup.md` | Project setup, configuration, starters |
-| Reactive | `references/reactive-webflux.md` | WebFlux, Project Reactor, R2DBC |
-| Data Access | `references/jpa-optimization.md` | JPA, Hibernate, query tuning |
-| Security | `references/spring-security.md` | OAuth2, JWT, method security |
-| Testing | `references/testing-patterns.md` | JUnit 5, TestContainers, Mockito |
+| Reactive    | `references/reactive-webflux.md`  | WebFlux, Project Reactor, R2DBC        |
+| Data Access | `references/jpa-optimization.md`  | JPA, Hibernate, query tuning           |
+| Security    | `references/spring-security.md`   | OAuth2, JWT, method security           |
+| Testing     | `references/testing-patterns.md`  | JUnit 5, TestContainers, Mockito       |
 
 ## Constraints
 
 ### MUST DO
-- Use Java 21 LTS features (records, sealed classes, pattern matching)
+- Use Java 25 LTS features (records, sealed classes, pattern matching)
 - Apply database migrations (Flyway/Liquibase)
 - Document APIs with OpenAPI/Swagger
 - Use proper exception handling hierarchy

@@ -3,48 +3,48 @@
 ## Complete Banner Sizes
 
 ### Social Media
-| Platform | Type | Size (px) | Aspect Ratio |
-|----------|------|-----------|--------------|
-| Facebook | Cover (desktop) | 820 × 312 | ~2.6:1 |
-| Facebook | Cover (mobile) | 640 × 360 | ~16:9 |
-| Facebook | Event cover | 1920 × 1080 | 16:9 |
-| Twitter/X | Header | 1500 × 500 | 3:1 |
-| Twitter/X | Ad banner | 800 × 418 | ~2:1 |
-| LinkedIn | Company cover | 1128 × 191 | ~6:1 |
-| LinkedIn | Personal banner | 1584 × 396 | 4:1 |
-| YouTube | Channel art | 2560 × 1440 | 16:9 |
-| YouTube | Safe area | 1546 × 423 | ~3.7:1 |
-| Instagram | Stories | 1080 × 1920 | 9:16 |
-| Instagram | Post | 1080 × 1080 | 1:1 |
-| Pinterest | Pin | 1000 × 1500 | 2:3 |
+| Platform  | Type            | Size (px)   | Aspect Ratio  |
+|-----------|-----------------|-------------|---------------|
+| Facebook  | Cover (desktop) | 820 × 312   | ~2.6:1        |
+| Facebook  | Cover (mobile)  | 640 × 360   | ~16:9         |
+| Facebook  | Event cover     | 1920 × 1080 | 16:9          |
+| Twitter/X | Header          | 1500 × 500  | 3:1           |
+| Twitter/X | Ad banner       | 800 × 418   | ~2:1          |
+| LinkedIn  | Company cover   | 1128 × 191  | ~6:1          |
+| LinkedIn  | Personal banner | 1584 × 396  | 4:1           |
+| YouTube   | Channel art     | 2560 × 1440 | 16:9          |
+| YouTube   | Safe area       | 1546 × 423  | ~3.7:1        |
+| Instagram | Stories         | 1080 × 1920 | 9:16          |
+| Instagram | Post            | 1080 × 1080 | 1:1           |
+| Pinterest | Pin             | 1000 × 1500 | 2:3           |
 
 ### Web / Display Ads (Google Display Network)
-| Name | Size (px) | Notes |
-|------|-----------|-------|
-| Medium Rectangle | 300 × 250 | Highest CTR |
-| Leaderboard | 728 × 90 | Top of page |
-| Wide Skyscraper | 160 × 600 | Sidebar |
-| Half Page | 300 × 600 | Premium |
-| Large Rectangle | 336 × 280 | High performer |
-| Mobile Banner | 320 × 50 | Mobile default |
-| Large Mobile | 320 × 100 | Mobile hero |
-| Billboard | 970 × 250 | Desktop hero |
+| Name             | Size (px)  | Notes          |
+|------------------|------------|----------------|
+| Medium Rectangle | 300 × 250  | Highest CTR    |
+| Leaderboard      | 728 × 90   | Top of page    |
+| Wide Skyscraper  | 160 × 600  | Sidebar        |
+| Half Page        | 300 × 600  | Premium        |
+| Large Rectangle  | 336 × 280  | High performer |
+| Mobile Banner    | 320 × 50   | Mobile default |
+| Large Mobile     | 320 × 100  | Mobile hero    |
+| Billboard        | 970 × 250  | Desktop hero   |
 
 ### Website
-| Type | Size (px) |
-|------|-----------|
+| Type            | Size (px)       |
+|-----------------|-----------------|
 | Full-width hero | 1920 × 600–1080 |
-| Section banner | 1200 × 400 |
-| Blog header | 1200 × 628 |
-| Email header | 600 × 200 |
+| Section banner  | 1200 × 400      |
+| Blog header     | 1200 × 628      |
+| Email header    | 600 × 200       |
 
 ### Print
-| Type | Size |
-|------|------|
-| Roll-up | 850mm × 2000mm |
-| Step-and-repeat | 8ft × 8ft |
-| Vinyl outdoor | 6ft × 3ft |
-| Trade show | 33in × 78in |
+| Type            | Size           |
+|-----------------|----------------|
+| Roll-up         | 850mm × 2000mm |
+| Step-and-repeat | 8ft × 8ft      |
+| Vinyl outdoor   | 6ft × 3ft      |
+| Trade show      | 33in × 78in    |
 
 ## 22 Art Direction Styles
 

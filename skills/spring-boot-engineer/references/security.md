@@ -1,48 +1,349 @@
-# Security - Spring Security 6
+# Security - Spring Security 7
+
+## Objective
+
+Standardize security in Java applications using **Spring Boot 4.0.5**, **Spring Security 7**, **Java 25**, and the project structure defined by the `clean-project-structure` skill.
+
+This reference adopts the following principles:
+
+- **Stateless authentication**
+- **JWE token encryption** instead of plain signed JWT as the default application token model
+- **Argon2** for password hashing
+- **Salt + pepper** for password hashing
+- **Use cases in `usecases/` annotated with `@Named`**
+- **Security configuration in `config/`**
+- **Security filters and token services as infrastructure components**
+- **All code in English**
+
+> Important: passwords must never be "encrypted" for later recovery. They must be **hashed** using **Argon2** with **unique salt per password** and an application-level **pepper** stored outside the database.
+
+---
+
+## Package Structure
+
+```text
+src/main/java/santannaf/<my_project>/
+  entities/
+  usecases/
+  providers/
+  dataproviders/
+    repository/
+      postgres/
+    client/
+      http/
+    async/
+      producer/
+  config/
+  entrypoint/
+    controller/
+      api/
+  exceptions/
+  security/
+  filter/
+```
+
+> `security/` and `filter/` are acceptable support packages for technical security components such as token services and servlet filters. They are infrastructure-oriented and must not contain business rules.
+
+---
+
+## Responsibilities by Layer
+
+### `entities/`
+Contains domain models only.
+
+Examples:
+- `User`
+- `Role`
+- `Permission`
+
+Rules:
+- no controller annotations
+- no repository implementation
+- no HTTP client logic
+- no Spring Security framework behavior inside domain entities unless strictly needed as plain domain data
+
+---
+
+### `usecases/`
+Contains authentication and authorization flows as application logic.
+
+Examples:
+- `LoginUserUseCase`
+- `RegisterUserUseCase`
+- `RefreshTokenUseCase`
+- `ChangePasswordUseCase`
+
+Rules:
+- must use `@Named`
+- must depend on `providers/`, `entities/`, and `exceptions/`
+- must not depend directly on JPA repositories or HTTP clients
+
+Example:
+
+```java
+package santannaf.catalog.usecases;
+
+import de.mkammerer.argon2.Argon2;
+import jakarta.inject.Named;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+import santannaf.catalog.entities.User;
+import santannaf.catalog.entrypoint.data.request.LoginRequest;
+import santannaf.catalog.entrypoint.data.response.AuthResponse;
+import santannaf.catalog.exceptions.InvalidCredentialsException;
+import santannaf.catalog.providers.UserProvider;
+import santannaf.catalog.security.JweTokenService;
+
+@Named
+public class LoginUserUseCase {
+
+    private final UserProvider userProvider;
+    private final Argon2 argon2;
+    private final JweTokenService tokenService;
+    private final String pepperKey;
+    private final String dummyHash;
+
+    public LoginUserUseCase(
+            UserProvider userProvider,
+            Argon2 argon2,
+            JweTokenService tokenService,
+            SecurityProperties securityProperties) {
+        this.userProvider = userProvider;
+        this.argon2 = argon2;
+        this.tokenService = tokenService;
+        this.pepperKey = securityProperties.pepper();
+        this.dummyHash = argon2.hash(
+                securityProperties.argon2Iterations(),
+                securityProperties.argon2MemoryKiB(),
+                securityProperties.argon2Parallelism(),
+                ("__dummy__" + pepperKey).toCharArray(),
+                StandardCharsets.UTF_8
+        );
+    }
+
+    public AuthResponse login(LoginRequest request) {
+        Optional<User> userOpt = userProvider.findByEmail(request.email());
+        String storedHash = userOpt.map(User::passwordHash).orElse(dummyHash);
+
+        boolean matches = argon2.verify(storedHash, (request.password() + pepperKey).toCharArray());
+
+        if (userOpt.isEmpty() || !matches) {
+            throw new InvalidCredentialsException();
+        }
+
+        User user = userOpt.get();
+        String token = tokenService.generateToken(user.id(), user.email());
+        return new AuthResponse(token, user.id().toString(), user.email(), user.name());
+    }
+}
+```
+
+---
+
+### `providers/`
+Contains application ports.
+
+Examples:
+- `UserProvider`
+- `SaveUserProvider`
+- `FindUserByEmailProvider`
+
+Example:
+
+```java
+package santannaf.catalog.providers;
+
+import java.util.Optional;
+import santannaf.catalog.entities.User;
+
+public interface UserProvider {
+    Optional<User> findByEmail(String email);
+}
+```
+
+---
+
+### `dataproviders/`
+Contains concrete infrastructure implementations.
+
+Examples:
+- `dataproviders/repository/postgres/PostgresUserDataProvider`
+- `dataproviders/client/http/IdentityHttpDataProvider`
+
+Rules:
+- repository implementations must use `@Repository`
+- HTTP clients must use `@Service`
+- async/event components must use `@Component`
+- no business rules here
+
+Example:
+
+```java
+package santannaf.catalog.dataproviders.repository.postgres;
+
+import java.util.Optional;
+import org.springframework.stereotype.Repository;
+import santannaf.catalog.entities.User;
+import santannaf.catalog.providers.UserProvider;
+
+@Repository
+public class PostgresUserDataProvider implements UserProvider {
+
+    private final UserJpaRepository userJpaRepository;
+
+    public PostgresUserDataProvider(UserJpaRepository userJpaRepository) {
+        this.userJpaRepository = userJpaRepository;
+    }
+
+    @Override
+    public Optional<User> findByEmail(String email) {
+        return userJpaRepository.findByEmail(email).map(UserEntityMapper::toDomain);
+    }
+}
+```
+
+---
+
+### `config/`
+Contains Spring Security, hashing, CORS, and HTTP security setup.
+
+Examples:
+- `SecurityConfig`
+- `SecurityPropertiesConfig`
+- `CorsConfig`
+
+---
+
+### `entrypoint/`
+Contains controllers only.
+
+Examples:
+- `entrypoint/controller/api/AuthController`
+
+Rules:
+- controllers call use cases
+- controllers must not call repository implementations directly
+
+---
+
+### `exceptions/`
+Contains business and application security exceptions.
+
+Examples:
+- `InvalidCredentialsException`
+- `InvalidTokenException`
+- `ExpiredTokenException`
+- `UserAlreadyExistsException`
+
+---
+
+## Security Model
+
+This standard uses:
+
+1. **Argon2** to hash passwords
+2. **Unique salt per password** generated by Argon2 and embedded in the stored hash
+3. **Pepper** stored in external configuration or secret management
+4. **JWE encrypted token** for authenticated requests
+5. **Stateless API** with `SessionCreationPolicy.STATELESS`
+6. **Security filter** that extracts and validates Bearer JWE tokens
+
+### Password hashing rule
+
+The password flow must be:
+
+```text
+raw password + pepper -> Argon2 hash with unique salt -> stored hash
+```
+
+### Why this matters
+
+- **Salt** defeats rainbow tables and ensures equal passwords do not produce equal hashes
+- **Pepper** adds an additional secret outside the database
+- **Argon2** is memory-hard and designed for password hashing
+- **JWE** encrypts claims instead of leaving them only signed and readable
+
+---
 
 ## Security Configuration
 
 ```java
+package santannaf.catalog.config;
+
+import de.mkammerer.argon2.Argon2;
+import de.mkammerer.argon2.Argon2Factory;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import santannaf.catalog.filter.JweAuthenticationFilter;
+import santannaf.catalog.security.JweTokenService;
+
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    private final JweTokenService tokenService;
+    private final List<String> allowedOrigins;
+
+    public SecurityConfig(
+            JweTokenService tokenService,
+            @Value("${app.cors.allowed-origins:*}") String allowedOriginsRaw) {
+        this.tokenService = tokenService;
+        this.allowedOrigins = Arrays.stream(allowedOriginsRaw.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.toList());
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(csrf -> csrf
-                .ignoringRequestMatchers("/api/auth/**")
-                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-            )
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/actuator/health").permitAll()
-                .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .requestMatchers("/api/users/**").hasAnyRole("USER", "ADMIN")
-                .anyRequest().authenticated()
-            )
-            .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-            )
-            .exceptionHandling(ex -> ex
-                .authenticationEntryPoint(authenticationEntryPoint())
-                .accessDeniedHandler(accessDeniedHandler())
-            )
-            .addFilterBefore(jwtAuthenticationFilter(),
-                           UsernamePasswordAuthenticationFilter.class);
-
-        return http.build();
+        return http
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/auth/register", "/auth/login").permitAll()
+                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .anyRequest().authenticated())
+                .addFilterBefore(
+                        new JweAuthenticationFilter(tokenService),
+                        UsernamePasswordAuthenticationFilter.class)
+                .build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+
+        if (allowedOrigins.contains("*")) {
+            configuration.setAllowedOriginPatterns(List.of("*"));
+        } else {
+            configuration.setAllowedOrigins(allowedOrigins);
+        }
+
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
@@ -50,68 +351,157 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
-    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+    public Argon2 argon2() {
+        return Argon2Factory.create();
     }
 }
 ```
 
-## JWT Authentication Filter
+---
+
+## JWE Token Service
 
 ```java
-@Component
-@RequiredArgsConstructor
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
-    private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
+package santannaf.catalog.security;
+
+import com.nimbusds.jose.EncryptionMethod;
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JWEAlgorithm;
+import com.nimbusds.jose.JWEHeader;
+import com.nimbusds.jose.crypto.RSADecrypter;
+import com.nimbusds.jose.crypto.RSAEncrypter;
+import com.nimbusds.jose.jwk.KeyUse;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import com.nimbusds.jwt.EncryptedJWT;
+import com.nimbusds.jwt.JWTClaimsSet;
+import java.text.ParseException;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+@Service
+public class JweTokenService {
+
+    private static final String CLAIM_EMAIL = "email";
+
+    private final RSAKey rsaKey;
+    private final long tokenExpiryHours;
+
+    public JweTokenService(
+            @Value("${app.security.jwe.key-size:2048}") int keySize,
+            @Value("${app.security.jwe.token-expiry-hours:24}") long tokenExpiryHours)
+            throws JOSEException {
+        this.rsaKey = new RSAKeyGenerator(keySize)
+                .keyUse(KeyUse.ENCRYPTION)
+                .keyID(UUID.randomUUID().toString())
+                .generate();
+        this.tokenExpiryHours = tokenExpiryHours;
+    }
+
+    public String generateToken(UUID userId, String email) {
+        try {
+            JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                    .subject(userId.toString())
+                    .claim(CLAIM_EMAIL, email)
+                    .issueTime(new Date())
+                    .expirationTime(Date.from(Instant.now().plus(tokenExpiryHours, ChronoUnit.HOURS)))
+                    .build();
+
+            JWEHeader header = new JWEHeader.Builder(JWEAlgorithm.RSA_OAEP_256, EncryptionMethod.A256GCM)
+                    .contentType("JWT")
+                    .build();
+
+            EncryptedJWT jwt = new EncryptedJWT(header, claims);
+            jwt.encrypt(new RSAEncrypter(rsaKey.toRSAPublicKey()));
+            return jwt.serialize();
+        } catch (JOSEException exception) {
+            throw new IllegalStateException("Failed to generate JWE token", exception);
+        }
+    }
+
+    public JWTClaimsSet validateAndExtract(String token) throws JOSEException, ParseException {
+        EncryptedJWT jwt = EncryptedJWT.parse(token);
+        jwt.decrypt(new RSADecrypter(rsaKey.toRSAPrivateKey()));
+
+        JWTClaimsSet claims = jwt.getJWTClaimsSet();
+        Date expiration = claims.getExpirationTime();
+
+        if (expiration == null || expiration.before(new Date())) {
+            throw new SecurityException("Token has expired");
+        }
+
+        return claims;
+    }
+}
+```
+
+> For production, the RSA key pair should be externalized to a secret manager, KMS, Vault, or environment-backed key material instead of being generated only at startup.
+
+---
+
+## Authentication Filter
+
+```java
+package santannaf.catalog.filter;
+
+import com.nimbusds.jwt.JWTClaimsSet;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.text.ParseException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.web.filter.OncePerRequestFilter;
+import santannaf.catalog.security.JweTokenService;
+
+public class JweAuthenticationFilter extends OncePerRequestFilter {
+
+    private final JweTokenService tokenService;
+
+    public JweAuthenticationFilter(JweTokenService tokenService) {
+        this.tokenService = tokenService;
+    }
 
     @Override
     protected void doFilterInternal(
-            @NonNull HttpServletRequest request,
-            @NonNull HttpServletRequest response,
-            @NonNull FilterChain filterChain) throws ServletException, IOException {
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain) throws ServletException, IOException {
 
-        final String authHeader = request.getHeader("Authorization");
-        final String jwt;
-        final String username;
-
+        String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        jwt = authHeader.substring(7);
+        String token = authHeader.substring(7);
 
         try {
-            username = jwtService.extractUsername(jwt);
+            JWTClaimsSet claims = tokenService.validateAndExtract(token);
 
-            if (username != null && SecurityContextHolder.getContext()
-                    .getAuthentication() == null) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-
-                if (jwtService.isTokenValid(jwt, userDetails)) {
-                    UsernamePasswordAuthenticationToken authToken =
+            if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
-                            userDetails,
-                            null,
-                            userDetails.getAuthorities()
-                        );
+                                claims.getSubject(),
+                                null,
+                                java.util.List.of());
 
-                    authToken.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
-                    );
+                authentication.setDetails(
+                        new WebAuthenticationDetailsSource().buildDetails(request));
 
-                    SecurityContextHolder.getContext().setAuthentication(authToken);
-                }
+                SecurityContextHolder.getContext().setAuthentication(authentication);
             }
-        } catch (JwtException e) {
-            log.error("JWT validation failed", e);
+        } catch (ParseException | SecurityException exception) {
+            SecurityContextHolder.clearContext();
+        } catch (Exception exception) {
+            SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);
@@ -119,341 +509,275 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 }
 ```
 
-## JWT Service
+---
+
+## Password Hashing Standard
+
+### Registration / password change flow
 
 ```java
-@Service
-public class JwtService {
-    @Value("${jwt.secret}")
-    private String secretKey;
+package santannaf.catalog.usecases;
 
-    @Value("${jwt.expiration}")
-    private long jwtExpiration;
+import de.mkammerer.argon2.Argon2;
+import jakarta.inject.Named;
+import santannaf.catalog.entities.User;
+import santannaf.catalog.providers.SaveUserProvider;
 
-    @Value("${jwt.refresh-expiration}")
-    private long refreshExpiration;
+@Named
+public class RegisterUserUseCase {
 
-    public String extractUsername(String token) {
-        return extractClaim(token, Claims::getSubject);
+    private final SaveUserProvider saveUserProvider;
+    private final Argon2 argon2;
+    private final SecurityProperties securityProperties;
+
+    public RegisterUserUseCase(
+            SaveUserProvider saveUserProvider,
+            Argon2 argon2,
+            SecurityProperties securityProperties) {
+        this.saveUserProvider = saveUserProvider;
+        this.argon2 = argon2;
+        this.securityProperties = securityProperties;
     }
 
-    public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = extractAllClaims(token);
-        return claimsResolver.apply(claims);
-    }
+    public User execute(String name, String email, String rawPassword) {
+        String passwordHash = argon2.hash(
+                securityProperties.argon2Iterations(),
+                securityProperties.argon2MemoryKiB(),
+                securityProperties.argon2Parallelism(),
+                (rawPassword + securityProperties.pepper()).toCharArray()
+        );
 
-    public String generateToken(UserDetails userDetails) {
-        Map<String, Object> extraClaims = new HashMap<>();
-        extraClaims.put("roles", userDetails.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .collect(Collectors.toList()));
-
-        return generateToken(extraClaims, userDetails);
-    }
-
-    public String generateToken(
-            Map<String, Object> extraClaims,
-            UserDetails userDetails) {
-        return buildToken(extraClaims, userDetails, jwtExpiration);
-    }
-
-    public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(new HashMap<>(), userDetails, refreshExpiration);
-    }
-
-    private String buildToken(
-            Map<String, Object> extraClaims,
-            UserDetails userDetails,
-            long expiration) {
-        return Jwts
-            .builder()
-            .setClaims(extraClaims)
-            .setSubject(userDetails.getUsername())
-            .setIssuedAt(new Date(System.currentTimeMillis()))
-            .setExpiration(new Date(System.currentTimeMillis() + expiration))
-            .signWith(getSignInKey(), SignatureAlgorithm.HS256)
-            .compact();
-    }
-
-    public boolean isTokenValid(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
-    }
-
-    private boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
-    }
-
-    private Date extractExpiration(String token) {
-        return extractClaim(token, Claims::getExpiration);
-    }
-
-    private Claims extractAllClaims(String token) {
-        return Jwts
-            .parserBuilder()
-            .setSigningKey(getSignInKey())
-            .build()
-            .parseClaimsJws(token)
-            .getBody();
-    }
-
-    private Key getSignInKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-        return Keys.hmacShaKeyFor(keyBytes);
+        User user = new User(null, name, email, passwordHash);
+        return saveUserProvider.save(user);
     }
 }
 ```
 
-## UserDetailsService Implementation
+### Important notes
 
-```java
-@Service
-@RequiredArgsConstructor
-public class CustomUserDetailsService implements UserDetailsService {
-    private final UserRepository userRepository;
+- Argon2 already generates and stores the **salt** inside the resulting encoded hash
+- the **pepper** must stay outside the database
+- never store raw passwords
+- never use reversible encryption for user passwords
+- use a dummy verification path on login to reduce timing-based username enumeration
 
-    @Override
-    @Transactional(readOnly = true)
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByEmailWithRoles(username)
-            .orElseThrow(() -> new UsernameNotFoundException(
-                "User not found with email: " + username));
-
-        return org.springframework.security.core.userdetails.User
-            .builder()
-            .username(user.getEmail())
-            .password(user.getPassword())
-            .authorities(user.getRoles().stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
-                .collect(Collectors.toList()))
-            .accountExpired(false)
-            .accountLocked(!user.getActive())
-            .credentialsExpired(false)
-            .disabled(!user.getActive())
-            .build();
-    }
-}
-```
+---
 
 ## Authentication Controller
 
 ```java
-@RestController
-@RequestMapping("/api/auth")
-@RequiredArgsConstructor
-public class AuthenticationController {
-    private final AuthenticationService authenticationService;
+package santannaf.catalog.entrypoint.controller.api;
 
-    @PostMapping("/register")
-    public ResponseEntity<AuthenticationResponse> register(
-            @Valid @RequestBody RegisterRequest request) {
-        AuthenticationResponse response = authenticationService.register(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import santannaf.catalog.entrypoint.data.request.LoginRequest;
+import santannaf.catalog.entrypoint.data.response.AuthResponse;
+import santannaf.catalog.usecases.LoginUserUseCase;
+
+@RestController
+@RequestMapping("/auth")
+public class AuthController {
+
+    private final LoginUserUseCase loginUserUseCase;
+
+    public AuthController(LoginUserUseCase loginUserUseCase) {
+        this.loginUserUseCase = loginUserUseCase;
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthenticationResponse> login(
-            @Valid @RequestBody LoginRequest request) {
-        AuthenticationResponse response = authenticationService.login(request);
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/refresh")
-    public ResponseEntity<AuthenticationResponse> refreshToken(
-            @RequestBody RefreshTokenRequest request) {
-        AuthenticationResponse response = authenticationService.refreshToken(request);
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/logout")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> logout() {
-        SecurityContextHolder.clearContext();
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+        return ResponseEntity.status(HttpStatus.OK).body(loginUserUseCase.login(request));
     }
 }
 ```
 
-## Authentication Service
+---
+
+## Configuration Properties
+
+Use `@ConfigurationProperties` for security settings instead of scattering security values across multiple `@Value` fields when possible.
 
 ```java
-@Service
-@RequiredArgsConstructor
-@Transactional
-public class AuthenticationService {
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
-    private final AuthenticationManager authenticationManager;
+package santannaf.catalog.config;
 
-    public AuthenticationResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
-            throw new DuplicateResourceException("Email already registered");
-        }
+import org.springframework.boot.context.properties.ConfigurationProperties;
 
-        User user = User.builder()
-            .email(request.email())
-            .password(passwordEncoder.encode(request.password()))
-            .username(request.username())
-            .active(true)
-            .roles(Set.of(Role.builder().name("USER").build()))
-            .build();
-
-        user = userRepository.save(user);
-
-        String accessToken = jwtService.generateToken(convertToUserDetails(user));
-        String refreshToken = jwtService.generateRefreshToken(convertToUserDetails(user));
-
-        return new AuthenticationResponse(accessToken, refreshToken);
-    }
-
-    public AuthenticationResponse login(LoginRequest request) {
-        authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(
-                request.email(),
-                request.password()
-            )
-        );
-
-        User user = userRepository.findByEmail(request.email())
-            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-
-        String accessToken = jwtService.generateToken(convertToUserDetails(user));
-        String refreshToken = jwtService.generateRefreshToken(convertToUserDetails(user));
-
-        return new AuthenticationResponse(accessToken, refreshToken);
-    }
-
-    public AuthenticationResponse refreshToken(RefreshTokenRequest request) {
-        String username = jwtService.extractUsername(request.refreshToken());
-
-        User user = userRepository.findByEmail(username)
-            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-
-        UserDetails userDetails = convertToUserDetails(user);
-
-        if (!jwtService.isTokenValid(request.refreshToken(), userDetails)) {
-            throw new InvalidTokenException("Invalid refresh token");
-        }
-
-        String accessToken = jwtService.generateToken(userDetails);
-
-        return new AuthenticationResponse(accessToken, request.refreshToken());
-    }
-
-    private UserDetails convertToUserDetails(User user) {
-        return org.springframework.security.core.userdetails.User
-            .builder()
-            .username(user.getEmail())
-            .password(user.getPassword())
-            .authorities(user.getRoles().stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
-                .collect(Collectors.toList()))
-            .build();
+@ConfigurationProperties(prefix = "app.security")
+public record SecurityProperties(
+        String pepper,
+        int argon2Iterations,
+        int argon2MemoryKiB,
+        int argon2Parallelism,
+        JweProperties jwe
+) {
+    public record JweProperties(int keySize, long tokenExpiryHours) {
     }
 }
 ```
+
+```yaml
+app:
+  security:
+    pepper: ${APP_SECURITY_PEPPER}
+    argon2-iterations: 20
+    argon2-memory-kib: 65536
+    argon2-parallelism: 1
+    jwe:
+      key-size: 2048
+      token-expiry-hours: 24
+  cors:
+    allowed-origins: http://localhost:3000
+```
+
+---
 
 ## Method Security
 
+Method security remains valid and should be enabled through `@EnableMethodSecurity`.
+
+Example:
+
 ```java
-@Service
-@RequiredArgsConstructor
-public class UserService {
-    private final UserRepository userRepository;
+package santannaf.catalog.usecases;
+
+import jakarta.inject.Named;
+import java.util.List;
+import org.springframework.security.access.prepost.PreAuthorize;
+import santannaf.catalog.entities.User;
+import santannaf.catalog.providers.FindAllUsersProvider;
+
+@Named
+public class GetAllUsersUseCase {
+
+    private final FindAllUsersProvider findAllUsersProvider;
+
+    public GetAllUsersUseCase(FindAllUsersProvider findAllUsersProvider) {
+        this.findAllUsersProvider = findAllUsersProvider;
+    }
 
     @PreAuthorize("hasRole('ADMIN')")
-    public List<User> getAllUsers() {
-        return userRepository.findAll();
-    }
-
-    @PreAuthorize("hasRole('ADMIN') or #userId == authentication.principal.id")
-    public User getUserById(Long userId) {
-        return userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
-
-    @PreAuthorize("isAuthenticated()")
-    @PostAuthorize("returnObject.email == authentication.principal.username")
-    public User updateProfile(Long userId, UserUpdateRequest request) {
-        User user = getUserById(userId);
-        // Update logic
-        return userRepository.save(user);
-    }
-
-    @Secured({"ROLE_ADMIN", "ROLE_MANAGER"})
-    public void deleteUser(Long userId) {
-        userRepository.deleteById(userId);
+    public List<User> execute() {
+        return findAllUsersProvider.findAll();
     }
 }
 ```
 
-## OAuth2 Resource Server (JWT)
+---
 
-```java
-@Configuration
-@EnableWebSecurity
-public class OAuth2ResourceServerConfig {
+## Recommended Dependencies
 
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/public/**").permitAll()
-                .anyRequest().authenticated()
-            )
-            .oauth2ResourceServer(oauth2 -> oauth2
-                .jwt(jwt -> jwt
-                    .jwtAuthenticationConverter(jwtAuthenticationConverter())
-                )
-            );
+### Gradle
 
-        return http.build();
-    }
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'jakarta.inject:jakarta.inject-api:2.0.1'
 
-    @Bean
-    public JwtDecoder jwtDecoder() {
-        return JwtDecoders.fromIssuerLocation("https://auth.example.com");
-    }
-
-    @Bean
-    public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter =
-            new JwtGrantedAuthoritiesConverter();
-        grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
-        grantedAuthoritiesConverter.setAuthorityPrefix("ROLE_");
-
-        JwtAuthenticationConverter jwtAuthenticationConverter =
-            new JwtAuthenticationConverter();
-        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(
-            grantedAuthoritiesConverter);
-
-        return jwtAuthenticationConverter;
-    }
+    implementation 'de.mkammerer:argon2-jvm:2.12'
+    implementation 'com.nimbusds:nimbus-jose-jwt:10.5'
 }
 ```
+
+### Maven
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <dependency>
+        <groupId>jakarta.inject</groupId>
+        <artifactId>jakarta.inject-api</artifactId>
+        <version>2.0.1</version>
+    </dependency>
+
+    <dependency>
+        <groupId>de.mkammerer</groupId>
+        <artifactId>argon2-jvm</artifactId>
+        <version>2.12</version>
+    </dependency>
+
+    <dependency>
+        <groupId>com.nimbusds</groupId>
+        <artifactId>nimbus-jose-jwt</artifactId>
+        <version>10.5</version>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## What is no longer the default in this standard
+
+The following patterns are **not** the default for this reference:
+
+- `BCryptPasswordEncoder` as the main password strategy
+- signed JWT only with `HS256` as the main application token model
+- `AuthenticationService` concentrating all flow and persistence details in one service class
+- controller calling infrastructure directly
+- use case annotated with `@Service` instead of `@Named`
+
+These may still exist in other projects, but they do not match this security standard.
+
+---
+
+## Best Practices
+
+- always use HTTPS in production
+- keep the pepper outside the database
+- prefer secret manager or KMS for RSA keys and peppers
+- rotate token encryption keys safely
+- implement audit logging for login failures and token errors
+- protect login against brute force attacks and rate-limit authentication endpoints
+- keep security events observable
+- validate input strictly
+- avoid exposing whether an email exists during login
+- do not log raw passwords, peppers, or token contents
+
+---
 
 ## Quick Reference
 
-| Annotation                 | Purpose                                      |
-|----------------------------|----------------------------------------------|
-| `@EnableWebSecurity`       | Enables Spring Security                      |
-| `@EnableMethodSecurity`    | Enables method-level security annotations    |
-| `@PreAuthorize`            | Checks authorization before method execution |
-| `@PostAuthorize`           | Checks authorization after method execution  |
-| `@Secured`                 | Role-based method security                   |
-| `@WithMockUser`            | Mock authenticated user in tests             |
-| `@AuthenticationPrincipal` | Inject current user in controller            |
+| Component                 | Purpose                                  |
+|---------------------------|------------------------------------------|
+| `@EnableWebSecurity`      | Enables Spring Security web support      |
+| `@EnableMethodSecurity`   | Enables method-level authorization       |
+| `@Named`                  | Mandatory annotation for use cases       |
+| `Argon2`                  | Password hashing with salt + pepper      |
+| `JweTokenService`         | JWE generation and validation            |
+| `JweAuthenticationFilter` | Extracts and validates Bearer JWE tokens |
+| `SecurityFilterChain`     | HTTP security rules                      |
+| `@Repository`             | Repository data provider implementation  |
+| `@Service`                | HTTP data provider implementation        |
+| `@Component`              | Other infra implementations              |
 
-## Security Best Practices
+---
 
-- Always use HTTPS in production
-- Store JWT secret in environment variables
-- Use strong password encoding (BCrypt with strength 12+)
-- Implement token refresh mechanism
-- Add rate limiting to authentication endpoints
-- Validate all user inputs
-- Log security events
-- Keep dependencies updated
-- Use CSRF protection for state-changing operations
-- Implement proper session timeout
+## Final Standard
+
+For this architecture, the expected default is:
+
+- **Spring Boot 4.0.5**
+- **Spring Security 7**
+- **Java 25**
+- **Argon2 + salt + pepper** for passwords
+- **JWE encrypted token** for stateless auth
+- **use cases in `usecases/` with `@Named`**
+- **ports in `providers/`**
+- **infra in `dataproviders/`**
+- **controllers in `entrypoint/controller/api/`**
+- **security config in `config/`**
+
