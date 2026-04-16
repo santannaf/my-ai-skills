@@ -846,3 +846,16 @@ Agora gere:
 
 
 
+Requisitos:
+- Aplicar concorrência no nível de análise de repositório, não no nível de leitura de linhas de arquivo.
+- Usar goroutines com um worker pool simples ou semaphore/channel para limitar a no máximo 3 análises simultâneas.
+- Adicionar um parâmetro de configuração/flag para definir o limite de concorrência, com default igual a 3.
+- Garantir que o relatório final continue determinístico e organizado, preservando a ordem original do CSV ou outra ordenação previsível.
+- Evitar race conditions.
+- Proteger estruturas compartilhadas quando necessário.
+- Consolidar os resultados somente ao final, após todas as goroutines terminarem.
+- Manter a implementação simples, idiomática e segura, sem overengineering.
+- Não criar concorrência interna para varrer arquivos de um mesmo repositório; o paralelismo deve existir apenas entre repositórios.
+- Atualizar o README com um exemplo mostrando o uso do limite de concorrência.
+
+
