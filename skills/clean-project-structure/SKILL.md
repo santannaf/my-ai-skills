@@ -140,15 +140,41 @@ src/main/kotlin/santannaf/<my_project>/
 ---
 
 ## `usecases/` (Application: use cases)
-**O que é:** classes que orquestram o fluxo de negócio da aplicação.
+**O que é:** classes que representam uma única intenção de negócio da aplicação, com uma única ação principal claramente identificável.
 
 **Contém:**
-- casos de uso como:
+- casos de uso específicos como:
   - `CreateProductUseCase`
   - `GetAllProductsUseCase`
-  - `UpdateCustomerLimitUseCase`
-- validações de aplicação
+  - `ApprovePaymentUseCase`
+  - `OpenConfirmationCaseUseCase`
+- validações de aplicação necessárias para esse fluxo
+- coordenação do fluxo da aplicação para executar essa ação
 - orquestração entre entidades e providers
+
+**Regra obrigatória de coesão:**
+- cada classe em `usecases/` deve representar **uma única ação principal**
+- cada use case deve ter **um único método público principal**, preferencialmente com nomes como
+  - O método público principal do use case pode:
+    - usar um nome padronizado, como `execute`, para manter consistência entre casos de uso
+    - ou usar um nome semântico que reflita claramente a ação de negócio
+      - `execute`
+      - `register`
+      - `open`
+      - `approve`
+      - `confirm`
+- não criar classes de use case com múltiplos métodos públicos representando ações diferentes do negócio
+
+A escolha deve seguir um padrão consistente no projeto.
+
+**Exemplo correto:**
+- `OpenConfirmationCaseUseCase`
+- `MarkConfirmationCaseConfirmedUseCase`
+- `MarkConfirmationCasePendingResponseUseCase`
+
+**Exemplo incorreto:**
+- `ConfirmationCaseUseCase` com métodos `openCase`, `markConfirmed`, `markPendingResponse`, `markEscalated`
+- `CustomerUseCase` com métodos `create`, `update`, `delete`, `findById`
 
 **Anotação obrigatória: `@Named`**
 
